@@ -11,17 +11,6 @@ from bs4.element import Tag
 from user_agent import generate_user_agent
 
 
-_HEADERS = {"User-Agent": generate_user_agent()}
-
-
-def _get_response(url: str):
-    return requests.get(url, headers=_HEADERS)
-
-
-def _get_soup(url: str):
-    return BeautifulSoup(_get_response(url).text, "html.parser")
-
-
 @dataclass
 class WBProduct:
     position: int
@@ -42,8 +31,16 @@ class WBParser:
     _SEARCH_URL = "/catalog/0/search.aspx?search={}&xsearch=true"
 
     def __init__(self, page_url: str):
+        self._session = requests.session()
+        self._session.headers = {"User-Agent": generate_user_agent()}
         self._page_url = page_url
-        self._soup = _get_soup(page_url)
+        self._soup = self._get_soup(page_url)
+
+    def __del__(self):
+        self._session.close()
+
+    def _get_soup(self, url: str):
+        return BeautifulSoup(self._session.get(url).text, "html.parser")
 
     @staticmethod
     def _parse_name(el: Tag) -> str:
@@ -55,7 +52,7 @@ class WBParser:
         url = f"{self._DOMAIN_URL}/{vendor_code}/product/data?"
         while True:
             try:
-                data = _get_response(url).json()
+                data = self._session.get(url).json()
                 return data["value"]["data"]["productCard"].get("description")
             except json.decoder.JSONDecodeError:
                 sleep(random())
@@ -104,7 +101,7 @@ class WBParser:
         data = json.loads(data_regexp.group(1))
         url = "https://wbxcatalog-ru.wildberries.ru/{}/filters?filters=xsubject&{}&locale=ru"
         url = url.format(data["xcatalogShard"], data["xcatalogQuery"])
-        json_ = _get_response(url).json()
+        json_ = self._session.get(url).json()
         categories = []
         base_url = "/" + "/".join(self._page_url.split("/")[3:])
         for cat_raw in json_["data"]["filters"][0]["items"]:
