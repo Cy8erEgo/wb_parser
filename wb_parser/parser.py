@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from random import random
 from time import sleep
-from typing import List, Optional
+from typing import List, Optional, NoReturn
 
 import requests
 from bs4 import BeautifulSoup
@@ -48,7 +48,7 @@ class WBParser:
         good_name = el.select_one("span.goods-name").text.strip()
         return f"{brand} {good_name}"
 
-    def parse_product_desc(self, vendor_code: int) -> str:
+    def _parse_product_desc(self, vendor_code: int) -> str:
         url = f"{self._DOMAIN_URL}/{vendor_code}/product/data?"
         while True:
             try:
@@ -57,27 +57,8 @@ class WBParser:
             except json.decoder.JSONDecodeError:
                 sleep(random())
 
-    def add_desc_to_product(self, product: WBProduct):
-        product.description = self.parse_product_desc(product.vendor_code)
-
-    def parse_products(self, exclude_desc: bool = False) -> List[WBProduct]:
-        products = []
-        product_elements = self._soup.findAll("div", class_="dtList-inner")
-
-        for i, product_el in enumerate(product_elements, 1):
-            url = product_el.select_one("a.j-open-full-product-card")["href"]
-            vendor_code = int(url.split("/")[2])
-            name = self._parse_name(product_el)
-            product = WBProduct(i, name, vendor_code, url)
-            products.append(product)
-
-        if not exclude_desc:
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor(100) as executor:
-                executor.map(self.add_desc_to_product, products)
-
-        return products
+    def _add_desc_to_product(self, product: WBProduct) -> NoReturn:
+        product.description = self._parse_product_desc(product.vendor_code)
 
     @staticmethod
     def _prepare_categories(categories: List[Tag]) -> List[WBCategory]:
@@ -109,6 +90,25 @@ class WBParser:
             url = f"{base_url}?xsubject={cat_raw['id']}"
             categories.append(WBCategory(name, url))
         return categories
+
+    def parse_products(self, exclude_desc: bool = False) -> List[WBProduct]:
+        products = []
+        product_elements = self._soup.findAll("div", class_="dtList-inner")
+
+        for i, product_el in enumerate(product_elements, 1):
+            url = product_el.select_one("a.j-open-full-product-card")["href"]
+            vendor_code = int(url.split("/")[2])
+            name = self._parse_name(product_el)
+            product = WBProduct(i, name, vendor_code, url)
+            products.append(product)
+
+        if not exclude_desc:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(100) as executor:
+                executor.map(self._add_desc_to_product, products)
+
+        return products
 
     def parse_categories(self) -> List[WBCategory]:
         if self._soup.select_one("ul.maincatalog-list-2"):
